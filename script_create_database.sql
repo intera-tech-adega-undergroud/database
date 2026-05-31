@@ -13,8 +13,7 @@ CREATE TABLE tbl_funcionario (
     id_funcionario INT PRIMARY KEY AUTO_INCREMENT,
     nome_usuario VARCHAR(45) NOT NULL,
     senha_cripto VARCHAR(45) NOT NULL,
-    nivel_acesso VARCHAR(45),
-    cpf VARCHAR(11) UNIQUE,
+    cpf VARCHAR(11),
     celular VARCHAR(45),
     email VARCHAR(45)
 );
@@ -40,6 +39,7 @@ CREATE TABLE tbl_produto (
     id_categoria INT,
     imagem VARCHAR(45),
     qtd_minimo INT DEFAULT 0,
+    qtd_unidade INT DEFAULT 0,
     CONSTRAINT fk_produto_categoria FOREIGN KEY (id_categoria) REFERENCES dmsao_categoria(id_categoria)
 );
 
@@ -59,9 +59,10 @@ CREATE TABLE tbl_evento (
 
 -- 6. Tabela de Itens do Evento (Relacionamento N:M entre Evento e Produto)
 CREATE TABLE item_evento (
-    id_item INT PRIMARY KEY AUTO_INCREMENT,
     id_evento INT NOT NULL,
     id_produto INT NOT NULL,
+    quantidade INT NOT NULL,
+    PRIMARY KEY (id_evento, id_produto),
     CONSTRAINT fk_item_evento FOREIGN KEY (id_evento) REFERENCES tbl_evento(id_evento),
     CONSTRAINT fk_item_produto FOREIGN KEY (id_produto) REFERENCES tbl_produto(id_produto)
 );
@@ -94,85 +95,248 @@ CREATE TABLE log (
     data_hora DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 10. Dimensão para permissões
+CREATE TABLE dmsao_permissao (
+    id_permissao INT PRIMARY KEY AUTO_INCREMENT,
+    permissao VARCHAR(45) NOT NULL
+);
 
-
-
-
-
+-- 11. Tabela de permissões de funcionarios
+CREATE TABLE permissao_funcionario (
+    tbl_funcionario_id_funcionario INT,
+    dmsao_permissao_id_permissao INT,
+    PRIMARY KEY (
+        tbl_funcionario_id_funcionario,
+        dmsao_permissao_id_permissao
+    ),
+    CONSTRAINT fk_permissao_funcionario_funcionario
+        FOREIGN KEY (tbl_funcionario_id_funcionario)
+        REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT fk_permissao_funcionario_permissao
+        FOREIGN KEY (dmsao_permissao_id_permissao)
+        REFERENCES dmsao_permissao(id_permissao)
+);
 
 -- INSERSTS
+INSERT INTO dmsao_permissao (permissao) VALUES
+('Visualizar usuários'),
+('Cadastrar usuários'),
+('Editar usuários'),
+('Desativar / ativar usuários'),
+('Redefinir senha'),
+
+('Visualizar produtos'),
+('Cadastrar produtos'),
+('Excluir / inativar produtos'),
+
+('Visualizar estoque'),
+('Entrada / recebimento'),
+('Ajuste manual'),
+('Perdas / quebras'),
+('Histórico de movimentações'),
+
+('Registrar venda'),
+('Aplicar desconto'),
+('Cancelar venda'),
+('Histórico de vendas');
 
 -- Inserindo Categorias
 INSERT INTO dmsao_categoria (categoria) VALUES 
-('BEBIDA UNIDADE'), ('BEBIDA FRACIONADA'), ('COMBO');
+('BEBIDA UNIDADE'), ('BEBIDA FRACIONADA'), ('DIVERSOS'), ('DRINK'), ('COMBO');
 
--- Inserindo Funcionário e Cliente
-INSERT INTO tbl_funcionario (nome_usuario, senha_cripto, nivel_acesso) 
-VALUES ('admin', 'hash_segura_123', 'GERENTE');
+-- =========================================================================
+-- 1. CATEGORIAS (dmsao_categoria)
+-- =========================================================================
+INSERT INTO dmsao_categoria (categoria) VALUES 
+('BEBIDA UNIDADE'), 
+('BEBIDA FRACIONADA'), 
+('DIVERSOS'), 
+('DRINK'), 
+('COMBO');
 
-INSERT INTO tbl_cliente (nome, compra_fiado, saldo_devedor) 
-VALUES ('Cliente Particular', 0, 0.00);
+-- =========================================================================
+-- 2. FUNCIONÁRIOS (tbl_funcionario)
+-- =========================================================================
+INSERT INTO tbl_funcionario (nome_usuario, senha_cripto, cpf, celular, email) VALUES 
+('admin', '123456', '11122233344', '11999998888', 'gerente@gmail.com'),
+('caixa_lucas', '123456', '22233344455', '11988887777', 'lucas.caixa@adegaunderground.com'),
+('barman_igor', '123456', '33344455566', '11977776666', 'igor.drinks@adegaunderground.com');
 
--- Inserindo Produtos (Tabela Auxiliar)
-INSERT INTO tbl_produto (nome, preco, id_categoria, volume_ml) VALUES 
-('Cerveja Lata 350ml', 6.00, 1, 350),
-('Garrafa Gin 750ml', 120.00, 2, 750),
-('Energético 250ml', 12.00, 1, 250);
+-- =========================================================================
+-- 3. CLIENTES (tbl_cliente)
+-- =========================================================================
+INSERT INTO tbl_cliente (compra_fiado, nome, email, telefone, saldo_devedor) VALUES 
+(0, 'Cliente Balcão / Não Identificado', NULL, NULL, 0.00),
+(1, 'Carlos Silva (Carlinhos)', 'carlinhos.silva@email.com', '11966665555', 150.00),
+(1, 'Mariana Oliveira', 'mari.oli@email.com', '11955554444', 0.00),
+(0, 'Marcos Souza', 'marcos.souza@email.com', '11944443333', 0.00);
 
--- EVENTO 1: Recebimento de Estoque (Entrada)
--- Registramos o recebimento de 50 latas de cerveja
-INSERT INTO tbl_evento (tipo, descricao, tbl_funcionario_id_funcionario, pago) 
-VALUES ('RECEBIMENTO', 'Compra de 50 unidades de Cerveja Lata', 1, 1);
-SET @ultimo_evento = LAST_INSERT_ID();
--- Inserimos 50 itens (num sistema real, isso seria um loop ou uma tabela de quantidade no item)
--- Para este exemplo, vamos simular que cada item_evento representa uma unidade ou um lote
-INSERT INTO item_evento (id_evento, id_produto) VALUES (@ultimo_evento, 1); 
+-- =========================================================================
+-- 4. PRODUTOS (tbl_produto)
+-- =========================================================================
+-- Categorias: 1=Bebida Unidade, 2=Bebida Fracionada, 3=Diversos, 4=Drink, 5=Combo
+INSERT INTO tbl_produto (nome, preco, ativo, embalagem, volume_ml, id_categoria, imagem, qtd_minimo, qtd_unidade) VALUES 
+-- Bebidas Unidade
+('Cerveja Heineken Long Neck', 9.50, 1, 'GARRAFA', 330, 1, 'heineken_ln.png', 50, 120),
+('Cerveja Amstel Latão', 6.00, 1, 'LATA', 473, 1, 'amstel_latao.png', 40, 85),
+('Refrigerante Coca-Cola Lata', 5.00, 1, 'LATA', 350, 1, 'coca_lata.png', 30, 60),
+('Vodka Smirnoff 998ml', 45.00, 1, 'GARRAFA', 998, 1, 'smirnoff_garrafa.png', 10, 15),
+('Whisky Red Label 1L', 110.00, 1, 'GARRAFA', 1000, 1, 'red_label.png', 5, 8),
+('Energético Monster 473ml', 12.00, 1, 'LATA', 473, 1, 'monster_lata.png', 20, 45),
 
--- EVENTO 2: Venda (Saída)
-INSERT INTO tbl_evento (tipo, forma_pagamento, tbl_cliente_id_cliente, tbl_funcionario_id_funcionario, pago) 
-VALUES ('VENDA', 'PIX', 1, 1, 1);
-SET @venda_id = LAST_INSERT_ID();
-INSERT INTO item_evento (id_evento, id_produto) VALUES (@venda_id, 1), (@venda_id, 1); -- Vendeu 2 latas
+-- Bebidas Fracionadas (Doses base para controle de estoque)
+('Dose Vodka Smirnoff', 8.00, 1, 'N/D', 50, 2, 'dose_smirnoff.png', 0, 0),
+('Dose Whisky Red Label', 15.00, 1, 'N/D', 50, 2, 'dose_redlabel.png', 0, 0),
 
--- EVENTO 3: Perda (Saída por quebra)
-INSERT INTO tbl_evento (tipo, descricao, tbl_funcionario_id_funcionario, pago) 
-VALUES ('PERDA', 'Lata amassada/vazada no transporte', 1, 1);
-INSERT INTO item_evento (id_evento, id_produto) VALUES (LAST_INSERT_ID(), 1);
+-- Diversos
+('Gelo de Coco Copão', 4.00, 1, 'N/D', NULL, 3, 'gelo_coco.png', 15, 35),
+('Batata Pringles Original', 14.00, 1, 'N/D', NULL, 3, 'pringles.png', 10, 22),
 
+-- Drinks preparados
+('Copão de Cavalo de Troia', 25.00, 1, 'N/D', 700, 4, 'copao_cavalo.png', 0, 0),
 
+-- Combos (O produto "Combo" possui um preço cheio)
+('Combo Red Label + 5 Monster + Gelo', 160.00, 1, 'N/D', NULL, 5, 'combo_red_monster.png', 0, 0);
 
+-- =========================================================================
+-- 5. EVENTOS / MOVIMENTAÇÕES (tbl_evento)
+-- =========================================================================
+INSERT INTO tbl_evento (id_evento, tipo, data_hora_evento, descricao, forma_pagamento, pago, tbl_cliente_id_cliente, tbl_funcionario_id_funcionario) VALUES 
+-- Venda comum no balcão em dinheiro (Pago)
+(1, 'VENDA', '2026-05-20 19:30:00', 'Venda rápida de cervejas', 'DINHEIRO', 1, 1, 2),
 
--- QUERYs UTEIS
+-- Venda de fiado registrada para o cliente Carlos (Não paga - aumenta saldo devedor)
+(2, 'VENDA', '2026-05-20 21:15:00', 'Venda pendente - autorizado pendurar', 'FIADO', 0, 2, 2),
 
+-- Perda de estoque (Garrafa quebrada pelo funcionário)
+(3, 'PERDA', '2026-05-21 15:00:00', 'Garrafa de Vodka quebrada ao repor freezer', NULL, 0, NULL, 2),
+
+-- Venda de um Combo completo no Pix
+(4, 'VENDA', '2026-05-22 23:45:00', 'Combo para o camarote', 'PIX', 1, 4, 3),
+
+-- Recebimento de dívida (Cliente Mariana pagando conta antiga)
+(5, 'RECEBIMENTO', '2026-05-23 18:00:00', 'Pagamento parcial de saldo devedor anterior', 'DEBITO', 1, 3, 2),
+
+-- Venda de drinks e fracionados
+(6, 'VENDA', '2026-05-24 01:20:00', 'Pedido de doses no balcão', 'CREDITO', 1, 1, 3),
+
+-- Venda Hoje
+(7, 'VENDA', '2026-05-25 19:30:00', 'Venda rápida de cervejas', 'DINHEIRO', 1, 1, 2);
+
+-- =========================================================================
+-- 6. ITENS DO EVENTO (item_evento)
+-- =========================================================================
+INSERT INTO item_evento (id_evento, id_produto, quantidade) VALUES 
+-- Itens do Evento 1 (Venda balcão): 4 Heineken e 1 Pringles
+(1, 1, 4), 
+(1, 10, 1),
+
+-- Itens do Evento 2 (Fiado do Carlos): 1 Whisky Red Label (Inteiro)
+(2, 5, 1),
+
+-- Itens do Evento 3 (Perda): 1 Vodka Smirnoff Garrafa
+(3, 4, 1),
+
+-- Itens do Evento 4 (Venda Combo): 1 Unidade do Combo cadastrado
+(4, 12, 1),
+
+-- Itens do Evento 6 (Doses e Drinks): 2 Doses Whisky e 2 Gelos de coco
+(6, 8, 2),
+(6, 9, 2),
+
+(7, 8, 2),
+(7, 9, 2);
+
+-- =========================================================================
+-- 7. COMPOSIÇÃO DOS COMBOS (tbl_combo)
+-- =========================================================================
+-- Associa o produto ID 12 (Combo Red Label) aos itens reais que saem do estoque
+INSERT INTO tbl_combo (tbl_produto_id_combo, tbl_produto_id_produto, quantidade_produto) VALUES 
+(12, 5, 1),  -- 1 Whisky Red Label 1L
+(12, 6, 5),  -- 5 Energéticos Monster
+(12, 9, 1);  -- 1 Gelo de coco
+
+-- =========================================================================
+-- 8. UNIDADE DE BEBIDA FRACIONADA (tbl_unidade_bebida)
+-- =========================================================================
+-- Controla garrafas abertas no bar para servir doses (Produto 4 = Vodka, Produto 5 = Whisky)
+INSERT INTO tbl_unidade_bebida (ml_inicial, ml_atual, status, id_produto) VALUES 
+('998', 498, 'ABERTO', 4),  -- Uma garrafa de Vodka aberta com 498ml restantes
+('1000', 0, 'ABERTO', 5),   -- Uma garrafa de Whisky que acabou de esvaziar (0ml)
+('1000', 1000, 'FECHADO', 5); -- Uma garrafa de Whisky reserva deixada no balcão fechada
+
+SELEcT * FROM tbl_funcionario;
+
+-- GRAFICO Visao Detalhada de Vendas Diarias
 SELECT 
-    p.nome AS Produto,
-    SUM(CASE WHEN e.tipo = 'RECEBIMENTO' THEN 1 ELSE 0 END) AS Entradas,
-    SUM(CASE WHEN e.tipo IN ('VENDA', 'PERDA') THEN 1 ELSE 0 END) AS Saidas,
-    (SUM(CASE WHEN e.tipo = 'RECEBIMENTO' THEN 1 ELSE 0 END) - 
-     SUM(CASE WHEN e.tipo IN ('VENDA', 'PERDA') THEN 1 ELSE 0 END)) AS Saldo_Atual
-FROM tbl_produto p
-JOIN item_evento ie ON p.id_produto = ie.id_produto
-JOIN tbl_evento e ON ie.id_evento = e.id_evento
-GROUP BY p.id_produto;
-
-
-SELECT 
-    p.nome, 
-    COUNT(ie.id_item) AS Qtd_Perdida,
-    SUM(p.preco) AS Valor_Prejuizo,
-    e.descricao AS Motivo
+    DAY(e.data_hora_evento) AS dia,
+    SUM(
+        p.preco * ie.quantidade
+    ) AS valor_total_vendas
 FROM tbl_evento e
-JOIN item_evento ie ON e.id_evento = ie.id_evento
-JOIN tbl_produto p ON ie.id_produto = p.id_produto
-WHERE e.tipo = 'PERDA'
-GROUP BY p.id_produto;
-
-
-SELECT 
-    forma_pagamento, 
-    SUM(p.preco) AS Total_Arrecadado
-FROM tbl_evento e
-JOIN item_evento ie ON e.id_evento = ie.id_evento
-JOIN tbl_produto p ON ie.id_produto = p.id_produto
+INNER JOIN item_evento ie
+    ON e.id_evento = ie.id_evento
+INNER JOIN tbl_produto p
+    ON ie.id_produto = p.id_produto
 WHERE e.tipo = 'VENDA'
-GROUP BY forma_pagamento;
+    AND MONTH(e.data_hora_evento) = MONTH(CURDATE())
+GROUP BY DAY(e.data_hora_evento)
+ORDER BY dia;
+
+-- RANKING POR VENDEDOR
+SELECT 
+    f.id_funcionario,
+    f.nome_usuario AS vendedor,
+    COUNT(DISTINCT e.id_evento) AS quantidade_vendas,
+    SUM(
+        p.preco * ie.quantidade
+    ) AS valor_total_vendido
+FROM tbl_funcionario f
+INNER JOIN tbl_evento e
+    ON f.id_funcionario = e.tbl_funcionario_id_funcionario
+INNER JOIN item_evento ie
+    ON e.id_evento = ie.id_evento
+INNER JOIN tbl_produto p
+    ON ie.id_produto = p.id_produto
+WHERE e.tipo = 'VENDA'
+    AND MONTH(e.data_hora_evento) = MONTH(CURDATE())
+    AND YEAR(e.data_hora_evento) = YEAR(CURDATE())
+GROUP BY 
+    f.id_funcionario,
+    f.nome_usuario
+ORDER BY valor_total_vendido DESC;
+
+-- KPI VENDAS MES
+SELECT 
+	SUM(
+        c.preco * b.quantidade
+	) AS valor_total_vendido,
+    COUNT(DISTINCT a.id_evento) as total_vendas
+FROM
+	tbl_evento as a
+INNER JOIN item_evento as b
+	ON a.id_evento = b.id_evento
+INNER JOIN tbl_produto as c
+	ON b.id_produto = c.id_produto
+WHERE
+	a.tipo = 'VENDA'
+    AND MONTH(a.data_hora_evento) = MONTH(CURDATE())
+    AND YEAR(a.data_hora_evento) = YEAR(CURDATE());
+    
+-- KPI FATURAMENTO DIA
+SELECT 
+	SUM(
+        c.preco * b.quantidade
+	) AS valor_total_vendido,
+    COUNT(DISTINCT a.id_evento) as total_vendas
+FROM
+	tbl_evento as a
+INNER JOIN item_evento as b
+	ON a.id_evento = b.id_evento
+INNER JOIN tbl_produto as c
+	ON b.id_produto = c.id_produto
+WHERE
+	a.tipo = 'VENDA'
+    AND DAY(a.data_hora_evento) = DAY(CURDATE())
+    AND MONTH(a.data_hora_evento) = MONTH(CURDATE())
+    AND YEAR(a.data_hora_evento) = YEAR(CURDATE());
