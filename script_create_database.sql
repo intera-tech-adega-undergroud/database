@@ -40,7 +40,16 @@ CREATE TABLE tbl_produto (
     imagem VARCHAR(45),
     qtd_minimo INT DEFAULT 0,
     qtd_unidade INT DEFAULT 0,
-    CONSTRAINT fk_produto_categoria FOREIGN KEY (id_categoria) REFERENCES dmsao_categoria(id_categoria)
+
+    id_produto_pai INT NULL,
+
+    CONSTRAINT fk_produto_categoria
+        FOREIGN KEY (id_categoria)
+        REFERENCES dmsao_categoria(id_categoria),
+
+    CONSTRAINT fk_produto_pai
+        FOREIGN KEY (id_produto_pai)
+        REFERENCES tbl_produto(id_produto)
 );
 
 -- 5. Tabela de Eventos (Vendas/Movimentações)
@@ -80,7 +89,7 @@ CREATE TABLE tbl_combo (
 -- 8. Tabela de Unidade de Bebida (Controle de Fracionados)
 CREATE TABLE tbl_unidade_bebida (
     id_unidade_bebida INT PRIMARY KEY AUTO_INCREMENT,
-    ml_inicial VARCHAR(45),
+    ml_inicial int(45),
     ml_atual INT,
     status ENUM('ABERTO', 'FECHADO') DEFAULT 'FECHADO',
     id_produto INT NOT NULL,
@@ -166,7 +175,7 @@ INSERT INTO tbl_funcionario (nome_usuario, senha_cripto, cpf, celular, email) VA
 -- 3. CLIENTES (tbl_cliente)
 -- =========================================================================
 INSERT INTO tbl_cliente (compra_fiado, nome, email, telefone, saldo_devedor) VALUES 
-(0, 'Cliente Balcão / Não Identificado', NULL, NULL, 0.00),
+(0, 'Cliente Balcão / Não Identificado', NULL, '00000000000', 0.00),
 (1, 'Carlos Silva (Carlinhos)', 'carlinhos.silva@email.com', '11966665555', 150.00),
 (1, 'Mariana Oliveira', 'mari.oli@email.com', '11955554444', 0.00),
 (0, 'Marcos Souza', 'marcos.souza@email.com', '11944443333', 0.00);
@@ -175,28 +184,29 @@ INSERT INTO tbl_cliente (compra_fiado, nome, email, telefone, saldo_devedor) VAL
 -- 4. PRODUTOS (tbl_produto)
 -- =========================================================================
 -- Categorias: 1=Bebida Unidade, 2=Bebida Fracionada, 3=Diversos, 4=Drink, 5=Combo
-INSERT INTO tbl_produto (nome, preco, ativo, embalagem, volume_ml, id_categoria, imagem, qtd_minimo, qtd_unidade) VALUES 
--- Bebidas Unidade
-('Cerveja Heineken Long Neck', 9.50, 1, 'GARRAFA', 330, 1, 'heineken_ln.png', 50, 120),
-('Cerveja Amstel Latão', 6.00, 1, 'LATA', 473, 1, 'amstel_latao.png', 40, 85),
-('Refrigerante Coca-Cola Lata', 5.00, 1, 'LATA', 350, 1, 'coca_lata.png', 30, 60),
-('Vodka Smirnoff 998ml', 45.00, 1, 'GARRAFA', 998, 1, 'smirnoff_garrafa.png', 10, 15),
-('Whisky Red Label 1L', 110.00, 1, 'GARRAFA', 1000, 1, 'red_label.png', 5, 8),
-('Energético Monster 473ml', 12.00, 1, 'LATA', 473, 1, 'monster_lata.png', 20, 45),
+INSERT INTO tbl_produto
+(nome, preco, ativo, embalagem, volume_ml, id_categoria, imagem, qtd_minimo, qtd_unidade, id_produto_pai)
+VALUES
+('Cerveja Heineken Long Neck', 9.50, 1, 'GARRAFA', 330, 1, 'heineken_ln.png', 50, 120, NULL),
+('Cerveja Amstel Latão', 6.00, 1, 'LATA', 473, 1, 'amstel_latao.png', 40, 85, NULL),
+('Refrigerante Coca-Cola Lata', 5.00, 1, 'LATA', 350, 1, 'coca_lata.png', 30, 60, NULL),
+('Vodka Smirnoff 998ml', 45.00, 1, 'GARRAFA', 998, 1, 'smirnoff_garrafa.png', 10, 15, NULL),
+('Whisky Red Label 1L', 110.00, 1, 'GARRAFA', 1000, 1, 'red_label.png', 5, 8, NULL),
+('Energético Monster 473ml', 12.00, 1, 'LATA', 473, 1, 'monster_lata.png', 20, 45, NULL),
 
 -- Bebidas Fracionadas (Doses base para controle de estoque)
-('Dose Vodka Smirnoff', 8.00, 1, 'N/D', 50, 2, 'dose_smirnoff.png', 0, 0),
-('Dose Whisky Red Label', 15.00, 1, 'N/D', 50, 2, 'dose_redlabel.png', 0, 0),
+('Dose Vodka Smirnoff', 8.00, 1, 'N/D', 50, 2, 'dose_smirnoff.png', 0, 0, 4),
+('Dose Whisky Red Label', 15.00, 1, 'N/D', 50, 2, 'dose_redlabel.png', 0, 0, 5),
 
 -- Diversos
-('Gelo de Coco Copão', 4.00, 1, 'N/D', NULL, 3, 'gelo_coco.png', 15, 35),
-('Batata Pringles Original', 14.00, 1, 'N/D', NULL, 3, 'pringles.png', 10, 22),
+('Gelo de Coco Copão', 4.00, 1, 'N/D', NULL, 3, 'gelo_coco.png', 15, 35, NULL),
+('Batata Pringles Original', 14.00, 1, 'N/D', NULL, 3, 'pringles.png', 10, 22, NULL),
 
 -- Drinks preparados
-('Copão de Cavalo de Troia', 25.00, 1, 'N/D', 700, 4, 'copao_cavalo.png', 0, 0),
+('Copão de Cavalo de Troia', 25.00, 1, 'N/D', 200, 4, 'copao_cavalo.png', 0, 0, 4),
 
 -- Combos (O produto "Combo" possui um preço cheio)
-('Combo Red Label + 5 Monster + Gelo', 160.00, 1, 'N/D', NULL, 5, 'combo_red_monster.png', 0, 0);
+('Combo Red Label + 5 Monster + Gelo', 160.00, 1, 'N/D', 250, 5, 'combo_red_monster.png', 0, 0, 5);
 
 -- =========================================================================
 -- 5. EVENTOS / MOVIMENTAÇÕES (tbl_evento)
@@ -209,7 +219,7 @@ INSERT INTO tbl_evento (id_evento, tipo, data_hora_evento, descricao, forma_paga
 (2, 'VENDA', '2026-05-20 21:15:00', 'Venda pendente - autorizado pendurar', 'FIADO', 0, 2, 2),
 
 -- Perda de estoque (Garrafa quebrada pelo funcionário)
-(3, 'PERDA', '2026-05-21 15:00:00', 'Garrafa de Vodka quebrada ao repor freezer', NULL, 0, NULL, 2),
+(3, 'PERDA', '2026-05-21 15:00:00', 'Garrafa de Vodka quebrada ao repor freezer', 'N/A', 0, NULL, 2),
 
 -- Venda de um Combo completo no Pix
 (4, 'VENDA', '2026-05-22 23:45:00', 'Combo para o camarote', 'PIX', 1, 4, 3),
@@ -220,8 +230,11 @@ INSERT INTO tbl_evento (id_evento, tipo, data_hora_evento, descricao, forma_paga
 -- Venda de drinks e fracionados
 (6, 'VENDA', '2026-05-24 01:20:00', 'Pedido de doses no balcão', 'CREDITO', 1, 1, 3),
 
+-- Venda
+(7, 'VENDA', '2026-05-25 19:30:00', 'Venda rápida de cervejas', 'DINHEIRO', 1, 1, 2),
+
 -- Venda Hoje
-(7, 'VENDA', '2026-05-25 19:30:00', 'Venda rápida de cervejas', 'DINHEIRO', 1, 1, 2);
+(8, 'VENDA', '2026-06-05 19:30:00', 'Venda rápida de cervejas', 'DINHEIRO', 1, 1, 2);
 
 -- =========================================================================
 -- 6. ITENS DO EVENTO (item_evento)
@@ -245,7 +258,10 @@ INSERT INTO item_evento (id_evento, id_produto, quantidade) VALUES
 (6, 9, 2),
 
 (7, 8, 2),
-(7, 9, 2);
+(7, 9, 2),
+
+(8, 8, 2),
+(8, 9, 2);
 
 -- =========================================================================
 -- 7. COMPOSIÇÃO DOS COMBOS (tbl_combo)
@@ -340,3 +356,49 @@ WHERE
     AND DAY(a.data_hora_evento) = DAY(CURDATE())
     AND MONTH(a.data_hora_evento) = MONTH(CURDATE())
     AND YEAR(a.data_hora_evento) = YEAR(CURDATE());
+    
+    
+    
+-- VALIDAÇÕES
+SELECT * FROM tbl_produto;
+
+SELECT
+    id_produto,
+    nome,
+    qtd_unidade,
+    qtd_minimo
+FROM tbl_produto
+ORDER BY nome;
+
+SELECT
+    ub.id_unidade_bebida,
+    p.nome,
+    ub.ml_inicial,
+    ub.ml_atual,
+    ub.status
+FROM tbl_unidade_bebida ub
+INNER JOIN tbl_produto p
+    ON p.id_produto = ub.id_produto
+ORDER BY ub.id_unidade_bebida;
+
+SELECT 
+    p.id_produto,
+    p.nome AS nome_produto,
+    p.embalagem,
+    IFNULL(ub.id_unidade_bebida, 'N/A') AS id_unidade,
+    IFNULL(ub.ml_atual, 0) AS ml_disponivel_dose,
+    IFNULL(ub.status, 'FECHADO') AS status_garrafa
+FROM tbl_produto p
+LEFT JOIN tbl_unidade_bebida ub 
+    ON p.id_produto = ub.id_produto
+ORDER BY ub.status DESC, p.nome;
+
+SELECT
+    p.id_produto,
+    p.nome,
+    c.categoria,
+    p.qtd_unidade
+FROM tbl_produto p
+JOIN dmsao_categoria c
+    ON p.id_categoria = c.id_categoria
+WHERE p.id_produto = 11;
