@@ -126,6 +126,14 @@ CREATE TABLE permissao_funcionario (
         REFERENCES dmsao_permissao(id_permissao)
 );
 
+-- 12. Tabela de daily-report || Micro-serviço
+CREATE TABLE daily_report_processed (
+    reference_date DATE PRIMARY KEY,
+    processed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+
 -- INSERSTS
 INSERT INTO dmsao_permissao (permissao) VALUES
 ('Visualizar usuários'),
@@ -148,10 +156,6 @@ INSERT INTO dmsao_permissao (permissao) VALUES
 ('Aplicar desconto'),
 ('Cancelar venda'),
 ('Histórico de vendas');
-
--- Inserindo Categorias
-INSERT INTO dmsao_categoria (categoria) VALUES 
-('BEBIDA UNIDADE'), ('BEBIDA FRACIONADA'), ('DIVERSOS'), ('DRINK'), ('COMBO');
 
 -- =========================================================================
 -- 1. CATEGORIAS (dmsao_categoria)
