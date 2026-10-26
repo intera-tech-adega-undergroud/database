@@ -1,4 +1,4 @@
-DROP DATABASE adega_underground;
+DROP DATABASE IF EXISTS adega_underground;
 CREATE DATABASE adega_underground;
 USE adega_underground;
 
@@ -40,6 +40,7 @@ CREATE TABLE tbl_produto (
     imagem VARCHAR(45),
     qtd_minimo INT DEFAULT 0,
     qtd_unidade INT DEFAULT 0,
+    valor_compra INT NULL,
 
     id_produto_pai INT NULL,
 

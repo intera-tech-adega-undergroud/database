@@ -32,6 +32,12 @@ Colunas de `notification_stock_alert_sent`: `product_id INT`, `reference_date DA
 `sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`, chave primária (`product_id`, `reference_date`).
 Script incremental: `migrations/001_create_notification_stock_alert_sent.sql`.
 
+## Alterações em tabelas existentes
+
+| Migration | Alteração |
+|---|---|
+| `002_add_valor_compra_to_produto.sql` | `tbl_produto.valor_compra INT NULL` (mapeia `Produto.valorCompra`, necessário para `ddl-auto=validate` no monólito) |
+
 Como a trava usa essa tabela: o serviço abre a transação e faz o `INSERT` da linha (produto, dia) antes de
 enviar o e-mail. Uma segunda transação com a mesma chave fica bloqueada nesse `INSERT` até a primeira terminar:
 se a primeira fizer commit, a segunda recebe chave duplicada e não envia; se a primeira fizer rollback (falha
