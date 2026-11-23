@@ -1,6 +1,7 @@
 DROP DATABASE IF EXISTS adega_underground;
 CREATE DATABASE adega_underground;
 USE adega_underground;
+SET NAMES utf8mb4;
 
 -- 1. Tabela de Categorias
 CREATE TABLE dmsao_categoria (
@@ -12,10 +13,15 @@ CREATE TABLE dmsao_categoria (
 CREATE TABLE tbl_funcionario (
     id_funcionario INT PRIMARY KEY AUTO_INCREMENT,
     nome_usuario VARCHAR(45) NOT NULL,
-    senha_cripto VARCHAR(45) NOT NULL,
+    senha_cripto VARCHAR(255) NOT NULL,
     cpf VARCHAR(11),
     celular VARCHAR(45),
-    email VARCHAR(45)
+    email VARCHAR(120),
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    desativado_em DATETIME NULL,
+    pin_hash VARCHAR(255) NULL,
+    CONSTRAINT uq_funcionario_email UNIQUE (email),
+    CONSTRAINT uq_funcionario_cpf UNIQUE (cpf)
 );
 
 -- 3. Tabela de Clientes
@@ -37,12 +43,22 @@ CREATE TABLE tbl_produto (
     embalagem ENUM('N/D', 'GARRAFA', 'LATA') DEFAULT 'N/D',
     volume_ml INT,
     id_categoria INT,
-    imagem VARCHAR(45),
+    imagem VARCHAR(255),
     qtd_minimo INT DEFAULT 0,
     qtd_unidade INT DEFAULT 0,
     valor_compra INT NULL,
 
     id_produto_pai INT NULL,
+    custo_unitario DECIMAL(10,2) NULL,
+    versao INT NOT NULL DEFAULT 0,
+    preco_alterado_por INT NULL,
+
+    CONSTRAINT fk_produto_preco_alterado_por
+        FOREIGN KEY (preco_alterado_por)
+        REFERENCES tbl_funcionario(id_funcionario),
+
+    CONSTRAINT chk_produto_custo
+        CHECK (custo_unitario IS NULL OR custo_unitario >= 0),
 
     CONSTRAINT fk_produto_categoria
         FOREIGN KEY (id_categoria)
@@ -63,8 +79,33 @@ CREATE TABLE tbl_evento (
     pago TINYINT(1) DEFAULT 0,
     tbl_cliente_id_cliente INT,
     tbl_funcionario_id_funcionario INT NOT NULL,
+    id_funcionario_executor INT NULL,
+    subtotal DECIMAL(10,2) NULL,
+    desconto_tipo ENUM('VALOR','PERCENTUAL') NULL,
+    desconto_percentual DECIMAL(5,2) NULL,
+    desconto_valor DECIMAL(10,2) NOT NULL DEFAULT 0,
+    id_funcionario_desconto INT NULL,
+    total DECIMAL(10,2) NULL,
+    status ENUM('CONCLUIDA','CANCELADA') NOT NULL DEFAULT 'CONCLUIDA',
+    cancelado_em DATETIME NULL,
+    id_funcionario_cancelamento INT NULL,
+    motivo_cancelamento VARCHAR(255) NULL,
+    valores_estimados TINYINT(1) NOT NULL DEFAULT 0,
+    id_caixa INT NULL,
     CONSTRAINT fk_evento_cliente FOREIGN KEY (tbl_cliente_id_cliente) REFERENCES tbl_cliente(id_cliente),
-    CONSTRAINT fk_evento_funcionario FOREIGN KEY (tbl_funcionario_id_funcionario) REFERENCES tbl_funcionario(id_funcionario)
+    CONSTRAINT fk_evento_funcionario FOREIGN KEY (tbl_funcionario_id_funcionario) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT fk_evento_executor FOREIGN KEY (id_funcionario_executor) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT fk_evento_func_desconto FOREIGN KEY (id_funcionario_desconto) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT fk_evento_func_cancelamento FOREIGN KEY (id_funcionario_cancelamento) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT chk_evento_desconto_valor CHECK (desconto_valor >= 0),
+    CONSTRAINT chk_evento_desconto_pct CHECK (desconto_percentual IS NULL OR (desconto_percentual BETWEEN 0 AND 100)),
+    CONSTRAINT chk_evento_valores CHECK ((subtotal IS NULL OR subtotal >= 0) AND (total IS NULL OR total >= 0)),
+    CONSTRAINT chk_evento_total CHECK (total IS NULL OR subtotal IS NULL OR total = subtotal - desconto_valor),
+    CONSTRAINT chk_evento_cancelamento CHECK (status = 'CONCLUIDA' OR cancelado_em IS NOT NULL),
+    INDEX idx_evento_tipo_status_data (tipo, status, data_hora_evento),
+    INDEX idx_evento_data (data_hora_evento),
+    INDEX idx_evento_caixa (id_caixa),
+    INDEX idx_evento_funcionario_data (tbl_funcionario_id_funcionario, data_hora_evento)
 );
 
 -- 6. Tabela de Itens do Evento (Relacionamento N:M entre Evento e Produto)
@@ -72,9 +113,12 @@ CREATE TABLE item_evento (
     id_evento INT NOT NULL,
     id_produto INT NOT NULL,
     quantidade INT NOT NULL,
+    preco_unitario DECIMAL(10,2) NULL,
+    subtotal_item DECIMAL(10,2) NULL,
     PRIMARY KEY (id_evento, id_produto),
     CONSTRAINT fk_item_evento FOREIGN KEY (id_evento) REFERENCES tbl_evento(id_evento),
-    CONSTRAINT fk_item_produto FOREIGN KEY (id_produto) REFERENCES tbl_produto(id_produto)
+    CONSTRAINT fk_item_produto FOREIGN KEY (id_produto) REFERENCES tbl_produto(id_produto),
+    CONSTRAINT chk_item_evento_valores CHECK ((preco_unitario IS NULL OR preco_unitario >= 0) AND (subtotal_item IS NULL OR subtotal_item >= 0))
 );
 
 -- 7. Tabela de Combos (Auto-relacionamento ou Composição)
@@ -90,11 +134,18 @@ CREATE TABLE tbl_combo (
 -- 8. Tabela de Unidade de Bebida (Controle de Fracionados)
 CREATE TABLE tbl_unidade_bebida (
     id_unidade_bebida INT PRIMARY KEY AUTO_INCREMENT,
-    ml_inicial int(45),
+    ml_inicial INT,
     ml_atual INT,
-    status ENUM('ABERTO', 'FECHADO') DEFAULT 'FECHADO',
+    status ENUM('ABERTO', 'FECHADO', 'ESGOTADA') DEFAULT 'FECHADO',
     id_produto INT NOT NULL,
-    CONSTRAINT fk_unidade_produto FOREIGN KEY (id_produto) REFERENCES tbl_produto(id_produto)
+    versao INT NOT NULL DEFAULT 0,
+    aberta_em DATETIME NULL,
+    esgotada_em DATETIME NULL,
+    CONSTRAINT fk_unidade_produto FOREIGN KEY (id_produto) REFERENCES tbl_produto(id_produto),
+    CONSTRAINT chk_unidade_volume CHECK (
+        (ml_inicial IS NULL OR ml_inicial > 0) AND (ml_atual IS NULL OR ml_atual >= 0)
+        AND (ml_inicial IS NULL OR ml_atual IS NULL OR ml_atual <= ml_inicial)),
+    CONSTRAINT chk_unidade_esgotada CHECK (status <> 'ESGOTADA' OR ml_atual = 0)
 );
 
 -- 9. Tabela de Logs
@@ -108,7 +159,8 @@ CREATE TABLE log (
 -- 10. Dimensão para permissões
 CREATE TABLE dmsao_permissao (
     id_permissao INT PRIMARY KEY AUTO_INCREMENT,
-    permissao VARCHAR(45) NOT NULL
+    permissao VARCHAR(45) NOT NULL,
+    CONSTRAINT uq_permissao_codigo UNIQUE (permissao)
 );
 
 -- 11. Tabela de permissões de funcionarios
@@ -148,29 +200,237 @@ CREATE TABLE notification_stock_alert_sent (
 );
 
 
+-- 14. Dimensão de formas de pagamento (normaliza dinheiro x eletrônico x fiado)
+CREATE TABLE dmsao_forma_pagamento (
+    id_forma_pagamento INT PRIMARY KEY AUTO_INCREMENT,
+    codigo VARCHAR(20) NOT NULL,
+    descricao VARCHAR(45) NOT NULL,
+    eh_dinheiro TINYINT(1) NOT NULL DEFAULT 0,
+    gera_saldo_devedor TINYINT(1) NOT NULL DEFAULT 0,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    CONSTRAINT uq_forma_pagamento_codigo UNIQUE (codigo)
+);
+
+INSERT INTO dmsao_forma_pagamento (codigo, descricao, eh_dinheiro, gera_saldo_devedor) VALUES
+('DINHEIRO', 'Dinheiro', 1, 0),
+('PIX', 'Pix', 0, 0),
+('DEBITO', 'Cartão de Débito', 0, 0),
+('CREDITO', 'Cartão de Crédito', 0, 0),
+('FIADO', 'Fiado', 0, 1);
+
+-- 15. Pagamentos do evento (pagamento dividido: N formas por venda; também recebimento de fiado)
+CREATE TABLE evento_pagamento (
+    id_pagamento INT PRIMARY KEY AUTO_INCREMENT,
+    id_evento INT NOT NULL,
+    id_forma_pagamento INT NOT NULL,
+    valor_recebido DECIMAL(10,2) NOT NULL,
+    valor_aplicado DECIMAL(10,2) NOT NULL,
+    troco DECIMAL(10,2) NOT NULL DEFAULT 0,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_evento_pagamento_evento FOREIGN KEY (id_evento) REFERENCES tbl_evento(id_evento),
+    CONSTRAINT fk_evento_pagamento_forma FOREIGN KEY (id_forma_pagamento) REFERENCES dmsao_forma_pagamento(id_forma_pagamento),
+    CONSTRAINT chk_evento_pagamento_valores CHECK (
+        valor_aplicado >= 0 AND troco >= 0 AND valor_recebido >= valor_aplicado
+        AND troco = valor_recebido - valor_aplicado),
+    INDEX idx_evento_pagamento_evento (id_evento),
+    INDEX idx_evento_pagamento_forma (id_forma_pagamento)
+);
+
+-- 16. Caixa (abertura com fundo inicial, fechamento com esperado x contado)
+CREATE TABLE caixa (
+    id_caixa INT PRIMARY KEY AUTO_INCREMENT,
+    id_funcionario_responsavel INT NOT NULL,
+    aberto_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fundo_inicial DECIMAL(10,2) NOT NULL DEFAULT 0,
+    status ENUM('ABERTO','FECHADO') NOT NULL DEFAULT 'ABERTO',
+    fechado_em DATETIME NULL,
+    id_funcionario_fechamento INT NULL,
+    valor_esperado DECIMAL(10,2) NULL,
+    valor_contado DECIMAL(10,2) NULL,
+    diferenca DECIMAL(10,2) NULL,
+    observacao VARCHAR(255) NULL,
+    CONSTRAINT fk_caixa_responsavel FOREIGN KEY (id_funcionario_responsavel) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT fk_caixa_fechamento FOREIGN KEY (id_funcionario_fechamento) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT chk_caixa_fundo CHECK (fundo_inicial >= 0),
+    CONSTRAINT chk_caixa_fechamento CHECK (
+        status = 'ABERTO' OR (fechado_em IS NOT NULL AND valor_contado IS NOT NULL AND id_funcionario_fechamento IS NOT NULL)),
+    INDEX idx_caixa_status (status, aberto_em),
+    INDEX idx_caixa_responsavel (id_funcionario_responsavel, status)
+);
+
+ALTER TABLE tbl_evento
+    ADD CONSTRAINT fk_evento_caixa FOREIGN KEY (id_caixa) REFERENCES caixa(id_caixa);
+
+-- 17. Movimentações do caixa (entrada adicional, sangria, devolução em dinheiro)
+CREATE TABLE movimento_caixa (
+    id_movimento_caixa INT PRIMARY KEY AUTO_INCREMENT,
+    id_caixa INT NOT NULL,
+    tipo ENUM('ENTRADA_ADICIONAL','SANGRIA','DEVOLUCAO_DINHEIRO') NOT NULL,
+    valor DECIMAL(10,2) NOT NULL,
+    motivo VARCHAR(255) NOT NULL,
+    id_funcionario INT NOT NULL,
+    id_evento INT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_movimento_caixa_caixa FOREIGN KEY (id_caixa) REFERENCES caixa(id_caixa),
+    CONSTRAINT fk_movimento_caixa_funcionario FOREIGN KEY (id_funcionario) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT fk_movimento_caixa_evento FOREIGN KEY (id_evento) REFERENCES tbl_evento(id_evento),
+    CONSTRAINT chk_movimento_caixa_valor CHECK (valor > 0),
+    INDEX idx_movimento_caixa_caixa (id_caixa, criado_em)
+);
+
+-- 18. Histórico de preços (alimentado pelas triggers da seção 22)
+CREATE TABLE historico_preco_produto (
+    id_historico_preco INT PRIMARY KEY AUTO_INCREMENT,
+    id_produto INT NOT NULL,
+    preco_anterior DECIMAL(10,2) NULL,
+    preco_novo DECIMAL(10,2) NOT NULL,
+    id_funcionario INT NULL,
+    alterado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    origem ENUM('INICIAL','APLICACAO','BANCO') NOT NULL DEFAULT 'BANCO',
+    CONSTRAINT fk_historico_preco_produto FOREIGN KEY (id_produto) REFERENCES tbl_produto(id_produto) ON DELETE CASCADE,
+    CONSTRAINT fk_historico_preco_funcionario FOREIGN KEY (id_funcionario) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT chk_historico_preco_valores CHECK (preco_novo >= 0 AND (preco_anterior IS NULL OR preco_anterior >= 0)),
+    INDEX idx_historico_preco_produto_data (id_produto, alterado_em),
+    INDEX idx_historico_preco_data (alterado_em)
+);
+
+-- 19. Movimentação de volume (ml) por garrafa: venda, amostra, perda, ajuste, abertura
+CREATE TABLE movimento_volume (
+    id_movimento_volume INT PRIMARY KEY AUTO_INCREMENT,
+    id_unidade_bebida INT NOT NULL,
+    tipo ENUM('ABERTURA','VENDA','AMOSTRA','PERDA','AJUSTE') NOT NULL,
+    ml_delta INT NOT NULL,
+    ml_anterior INT NOT NULL,
+    ml_posterior INT NOT NULL,
+    id_produto_vendido INT NULL,
+    id_evento INT NULL,
+    id_funcionario INT NULL,
+    motivo VARCHAR(255) NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_movimento_volume_unidade FOREIGN KEY (id_unidade_bebida) REFERENCES tbl_unidade_bebida(id_unidade_bebida),
+    CONSTRAINT fk_movimento_volume_produto FOREIGN KEY (id_produto_vendido) REFERENCES tbl_produto(id_produto),
+    CONSTRAINT fk_movimento_volume_evento FOREIGN KEY (id_evento) REFERENCES tbl_evento(id_evento),
+    CONSTRAINT fk_movimento_volume_funcionario FOREIGN KEY (id_funcionario) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT chk_movimento_volume_saldo CHECK (ml_posterior >= 0 AND ml_posterior = ml_anterior + ml_delta),
+    CONSTRAINT chk_movimento_volume_sentido CHECK (
+        (tipo IN ('VENDA','AMOSTRA','PERDA') AND ml_delta < 0)
+        OR (tipo = 'ABERTURA' AND ml_delta = 0)
+        OR tipo = 'AJUSTE'),
+    INDEX idx_movimento_volume_unidade (id_unidade_bebida, criado_em),
+    INDEX idx_movimento_volume_evento (id_evento)
+);
+
+-- 20. Movimentação de estoque em unidades (razão do estoque; saldo pode ser negativo)
+CREATE TABLE movimento_estoque (
+    id_movimento_estoque INT PRIMARY KEY AUTO_INCREMENT,
+    id_produto INT NOT NULL,
+    tipo ENUM('ENTRADA','VENDA','CANCELAMENTO','PERDA','AMOSTRA','AJUSTE','ABERTURA_GARRAFA') NOT NULL,
+    quantidade_delta INT NOT NULL,
+    saldo_anterior INT NOT NULL,
+    saldo_posterior INT NOT NULL,
+    id_evento INT NULL,
+    id_funcionario INT NULL,
+    motivo VARCHAR(255) NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_movimento_estoque_produto FOREIGN KEY (id_produto) REFERENCES tbl_produto(id_produto),
+    CONSTRAINT fk_movimento_estoque_evento FOREIGN KEY (id_evento) REFERENCES tbl_evento(id_evento),
+    CONSTRAINT fk_movimento_estoque_funcionario FOREIGN KEY (id_funcionario) REFERENCES tbl_funcionario(id_funcionario),
+    CONSTRAINT chk_movimento_estoque_saldo CHECK (saldo_posterior = saldo_anterior + quantidade_delta),
+    INDEX idx_movimento_estoque_produto (id_produto, criado_em),
+    INDEX idx_movimento_estoque_evento (id_evento)
+);
+
+-- 21. Resumo do caixa: mesma fórmula para fechamento, histórico e resumos
+-- esperado = fundo inicial + recebimentos líquidos em dinheiro + entradas adicionais - sangrias - devoluções em dinheiro
+CREATE OR REPLACE VIEW vw_caixa_resumo AS
+SELECT t.*,
+       t.valor_contado - t.valor_esperado_calculado AS diferenca_calculada
+FROM (
+    SELECT c.id_caixa,
+           c.id_funcionario_responsavel,
+           c.status,
+           c.aberto_em,
+           c.fechado_em,
+           c.fundo_inicial,
+           COALESCE(r.dinheiro, 0)   AS recebimentos_dinheiro,
+           COALESCE(r.eletronico, 0) AS recebimentos_eletronicos,
+           COALESCE(m.entradas, 0)   AS entradas_adicionais,
+           COALESCE(m.sangrias, 0)   AS sangrias,
+           COALESCE(m.devolucoes, 0) AS devolucoes_dinheiro,
+           c.fundo_inicial + COALESCE(r.dinheiro, 0) + COALESCE(m.entradas, 0)
+               - COALESCE(m.sangrias, 0) - COALESCE(m.devolucoes, 0) AS valor_esperado_calculado,
+           c.valor_contado
+    FROM caixa c
+    LEFT JOIN (
+        SELECT e.id_caixa,
+               SUM(IF(f.eh_dinheiro = 1, ep.valor_aplicado, 0)) AS dinheiro,
+               SUM(IF(f.eh_dinheiro = 0 AND f.gera_saldo_devedor = 0, ep.valor_aplicado, 0)) AS eletronico
+        FROM tbl_evento e
+        JOIN evento_pagamento ep ON ep.id_evento = e.id_evento
+        JOIN dmsao_forma_pagamento f ON f.id_forma_pagamento = ep.id_forma_pagamento
+        WHERE e.id_caixa IS NOT NULL
+        GROUP BY e.id_caixa
+    ) r ON r.id_caixa = c.id_caixa
+    LEFT JOIN (
+        SELECT id_caixa,
+               SUM(IF(tipo = 'ENTRADA_ADICIONAL', valor, 0)) AS entradas,
+               SUM(IF(tipo = 'SANGRIA', valor, 0)) AS sangrias,
+               SUM(IF(tipo = 'DEVOLUCAO_DINHEIRO', valor, 0)) AS devolucoes
+        FROM movimento_caixa
+        GROUP BY id_caixa
+    ) m ON m.id_caixa = c.id_caixa
+) t;
+
+-- 22. Triggers do histórico de preços (exigem privilégio TRIGGER; com binlog ligado veja migrations/008)
+DELIMITER $$
+
+DROP TRIGGER IF EXISTS trg_produto_historico_preco_bu$$
+CREATE TRIGGER trg_produto_historico_preco_bu
+BEFORE UPDATE ON tbl_produto
+FOR EACH ROW
+BEGIN
+    IF NOT (OLD.preco <=> NEW.preco) THEN
+        INSERT INTO historico_preco_produto (id_produto, preco_anterior, preco_novo, id_funcionario, origem)
+        VALUES (NEW.id_produto, OLD.preco, NEW.preco, NEW.preco_alterado_por,
+                IF(NEW.preco_alterado_por IS NULL, 'BANCO', 'APLICACAO'));
+    END IF;
+    SET NEW.preco_alterado_por = NULL;
+END$$
+
+DROP TRIGGER IF EXISTS trg_produto_historico_preco_ai$$
+CREATE TRIGGER trg_produto_historico_preco_ai
+AFTER INSERT ON tbl_produto
+FOR EACH ROW
+BEGIN
+    INSERT INTO historico_preco_produto (id_produto, preco_anterior, preco_novo, id_funcionario, origem)
+    VALUES (NEW.id_produto, NULL, NEW.preco, NULL, 'INICIAL');
+END$$
+
+DELIMITER ;
+
 
 -- INSERSTS
 INSERT INTO dmsao_permissao (permissao) VALUES
-('Visualizar usuários'),
-('Cadastrar usuários'),
-('Editar usuários'),
-('Desativar / ativar usuários'),
-('Redefinir senha'),
+('usuarios_ver'),
+('usuarios_criar'),
+('usuarios_editar'),
+('usuarios_desativar'),
+('usuarios_reset'),
 
-('Visualizar produtos'),
-('Cadastrar produtos'),
-('Excluir / inativar produtos'),
+('produtos_ver'),
+('produtos_criar'),
+('produtos_excluir'),
 
-('Visualizar estoque'),
-('Entrada / recebimento'),
-('Ajuste manual'),
-('Perdas / quebras'),
-('Histórico de movimentações'),
+('estoque_ver'),
+('estoque_entrada'),
+('estoque_ajuste'),
+('estoque_perdas'),
+('estoque_historico'),
 
-('Registrar venda'),
-('Aplicar desconto'),
-('Cancelar venda'),
-('Histórico de vendas');
+('vendas_registrar'),
+('vendas_desconto'),
+('vendas_cancelar'),
+('vendas_historico');
 
 -- =========================================================================
 -- 1. CATEGORIAS (dmsao_categoria)
@@ -186,9 +446,9 @@ INSERT INTO dmsao_categoria (categoria) VALUES
 -- 2. FUNCIONÁRIOS (tbl_funcionario)
 -- =========================================================================
 INSERT INTO tbl_funcionario (nome_usuario, senha_cripto, cpf, celular, email) VALUES 
-('admin', '123456', '11122233344', '11999998888', 'gerente@gmail.com'),
-('caixa_lucas', '123456', '22233344455', '11988887777', 'lucas.caixa@adegaunderground.com'),
-('barman_igor', '123456', '33344455566', '11977776666', 'igor.drinks@adegaunderground.com');
+('admin', '$2b$10$i41FfYzbosF1rp.y9/L9ReOw.75D4LtP8RvEt.OcRRb1ytMryTAf6', '11122233344', '11999998888', 'gerente@gmail.com'),
+('caixa_lucas', '$2b$10$6v8xQKDMsrI4A9x7e6Ga0eyGDSCToewV5STeEYvuIfuaqJdeYq7R2', '22233344455', '11988887777', 'lucas.caixa@adegaunderground.com'),
+('barman_igor', '$2b$10$Sm7y7uVJguqsJcaw26EKnuzZcUA//JhgLRdh26ZKEN6TOjlSQBVO.', '33344455566', '11977776666', 'igor.drinks@adegaunderground.com');
 
 -- =========================================================================
 -- 3. CLIENTES (tbl_cliente)
@@ -300,84 +560,94 @@ INSERT INTO tbl_unidade_bebida (ml_inicial, ml_atual, status, id_produto) VALUES
 ('1000', 0, 'ABERTO', 5),   -- Uma garrafa de Whisky que acabou de esvaziar (0ml)
 ('1000', 1000, 'FECHADO', 5); -- Uma garrafa de Whisky reserva deixada no balcão fechada
 
+-- =========================================================================
+-- 9. VALORES DAS VENDAS DE EXEMPLO (preço praticado, total e pagamentos)
+-- =========================================================================
+UPDATE item_evento ie
+JOIN tbl_produto p ON p.id_produto = ie.id_produto
+SET ie.preco_unitario = p.preco,
+    ie.subtotal_item = p.preco * ie.quantidade
+WHERE ie.preco_unitario IS NULL;
+
+UPDATE tbl_evento e
+JOIN (SELECT id_evento, SUM(subtotal_item) AS soma FROM item_evento GROUP BY id_evento) x
+  ON x.id_evento = e.id_evento
+SET e.subtotal = x.soma,
+    e.total = x.soma - e.desconto_valor,
+    e.valores_estimados = 1
+WHERE e.tipo = 'VENDA' AND e.subtotal IS NULL;
+
+UPDATE tbl_evento
+SET id_funcionario_executor = tbl_funcionario_id_funcionario
+WHERE id_funcionario_executor IS NULL;
+
+-- Pagamentos: uma linha por venda, com a forma original normalizada. Formas não reconhecidas
+-- (ex.: 'N/A' em perdas) ficam sem linha. Fiado entra como forma FIADO (não é dinheiro recebido).
+INSERT INTO evento_pagamento (id_evento, id_forma_pagamento, valor_recebido, valor_aplicado, troco)
+SELECT e.id_evento, f.id_forma_pagamento, e.total, e.total, 0
+FROM tbl_evento e
+JOIN dmsao_forma_pagamento f ON f.codigo = CASE
+        WHEN e.forma_pagamento LIKE '%dinheiro%' THEN 'DINHEIRO'
+        WHEN e.forma_pagamento LIKE '%pix%' THEN 'PIX'
+        WHEN e.forma_pagamento LIKE '%debito%' THEN 'DEBITO'
+        WHEN e.forma_pagamento LIKE '%credito%' THEN 'CREDITO'
+        WHEN e.forma_pagamento LIKE '%fiado%' THEN 'FIADO'
+    END
+WHERE e.tipo = 'VENDA'
+  AND e.total IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM evento_pagamento ep WHERE ep.id_evento = e.id_evento);
+
 SELEcT * FROM tbl_funcionario;
 
--- GRAFICO Visao Detalhada de Vendas Diarias
-SELECT 
+-- GRAFICO Visao Detalhada de Vendas Diarias (usa o total gravado na venda, nunca o preço atual do produto)
+SELECT
     DAY(e.data_hora_evento) AS dia,
-    SUM(
-        p.preco * ie.quantidade
-    ) AS valor_total_vendas
+    SUM(e.total) AS valor_total_vendas
 FROM tbl_evento e
-INNER JOIN item_evento ie
-    ON e.id_evento = ie.id_evento
-INNER JOIN tbl_produto p
-    ON ie.id_produto = p.id_produto
 WHERE e.tipo = 'VENDA'
+    AND e.status = 'CONCLUIDA'
     AND MONTH(e.data_hora_evento) = MONTH(CURDATE())
+    AND YEAR(e.data_hora_evento) = YEAR(CURDATE())
 GROUP BY DAY(e.data_hora_evento)
 ORDER BY dia;
 
 -- RANKING POR VENDEDOR
-SELECT 
+SELECT
     f.id_funcionario,
     f.nome_usuario AS vendedor,
-    COUNT(DISTINCT e.id_evento) AS quantidade_vendas,
-    SUM(
-        p.preco * ie.quantidade
-    ) AS valor_total_vendido
+    COUNT(*) AS quantidade_vendas,
+    SUM(e.total) AS valor_total_vendido
 FROM tbl_funcionario f
 INNER JOIN tbl_evento e
     ON f.id_funcionario = e.tbl_funcionario_id_funcionario
-INNER JOIN item_evento ie
-    ON e.id_evento = ie.id_evento
-INNER JOIN tbl_produto p
-    ON ie.id_produto = p.id_produto
 WHERE e.tipo = 'VENDA'
+    AND e.status = 'CONCLUIDA'
     AND MONTH(e.data_hora_evento) = MONTH(CURDATE())
     AND YEAR(e.data_hora_evento) = YEAR(CURDATE())
-GROUP BY 
+GROUP BY
     f.id_funcionario,
     f.nome_usuario
 ORDER BY valor_total_vendido DESC;
 
 -- KPI VENDAS MES
-SELECT 
-	SUM(
-        c.preco * b.quantidade
-	) AS valor_total_vendido,
-    COUNT(DISTINCT a.id_evento) as total_vendas
-FROM
-	tbl_evento as a
-INNER JOIN item_evento as b
-	ON a.id_evento = b.id_evento
-INNER JOIN tbl_produto as c
-	ON b.id_produto = c.id_produto
-WHERE
-	a.tipo = 'VENDA'
-    AND MONTH(a.data_hora_evento) = MONTH(CURDATE())
-    AND YEAR(a.data_hora_evento) = YEAR(CURDATE());
-    
+SELECT
+    SUM(e.total) AS valor_total_vendido,
+    COUNT(*) AS total_vendas
+FROM tbl_evento e
+WHERE e.tipo = 'VENDA'
+    AND e.status = 'CONCLUIDA'
+    AND MONTH(e.data_hora_evento) = MONTH(CURDATE())
+    AND YEAR(e.data_hora_evento) = YEAR(CURDATE());
+
 -- KPI FATURAMENTO DIA
-SELECT 
-	SUM(
-        c.preco * b.quantidade
-	) AS valor_total_vendido,
-    COUNT(DISTINCT a.id_evento) as total_vendas
-FROM
-	tbl_evento as a
-INNER JOIN item_evento as b
-	ON a.id_evento = b.id_evento
-INNER JOIN tbl_produto as c
-	ON b.id_produto = c.id_produto
-WHERE
-	a.tipo = 'VENDA'
-    AND DAY(a.data_hora_evento) = DAY(CURDATE())
-    AND MONTH(a.data_hora_evento) = MONTH(CURDATE())
-    AND YEAR(a.data_hora_evento) = YEAR(CURDATE());
-    
-    
-    
+SELECT
+    SUM(e.total) AS valor_total_vendido,
+    COUNT(*) AS total_vendas
+FROM tbl_evento e
+WHERE e.tipo = 'VENDA'
+    AND e.status = 'CONCLUIDA'
+    AND DATE(e.data_hora_evento) = CURDATE();
+
 -- VALIDAÇÕES
 SELECT * FROM tbl_produto;
 
@@ -420,4 +690,4 @@ SELECT
 FROM tbl_produto p
 JOIN dmsao_categoria c
     ON p.id_categoria = c.id_categoria
-WHERE p.id_produto = 11;
+WHERE p.id_produto = 11;

@@ -37,6 +37,19 @@ Script incremental: `migrations/001_create_notification_stock_alert_sent.sql`.
 | Migration | Alteração |
 |---|---|
 | `002_add_valor_compra_to_produto.sql` | `tbl_produto.valor_compra INT NULL` (mapeia `Produto.valorCompra`, necessário para `ddl-auto=validate` no monólito) |
+| `003_ajusta_funcionario_e_permissoes.sql` | `tbl_funcionario`: `senha_cripto` 255, `ativo`, `desativado_em`, `pin_hash`, `UNIQUE` em e-mail e CPF; `dmsao_permissao` passa a guardar os códigos de `PermissaoCodigo` (rótulos antigos mesclados) e `UNIQUE` |
+| `004_registro_financeiro_venda.sql` | `tbl_evento`: executor, subtotal, desconto, total, status, cancelamento, `valores_estimados`; `item_evento`: `preco_unitario`, `subtotal_item`; tabelas `dmsao_forma_pagamento` e `evento_pagamento` |
+| `005_backfill_valores_vendas.sql` | preenche valores das vendas antigas com o preço atual (marcadas como estimadas); re-executável |
+| `006_caixa.sql` | tabelas `caixa` e `movimento_caixa`, `tbl_evento.id_caixa`, view `vw_caixa_resumo` |
+| `007_historico_preco_produto.sql` | tabela `historico_preco_produto`, `tbl_produto.preco_alterado_por` (caixa de correio lida e zerada pela trigger) |
+| `008_triggers_historico_preco.sql` | triggers `trg_produto_historico_preco_bu` e `_ai`; exigem privilégio de trigger (erro 1419 com binlog) |
+| `009_estoque_e_volume.sql` | `versao` (lock otimista) em produto e unidade; status `ESGOTADA`, `CHECK` de ml; tabelas `movimento_volume` e `movimento_estoque` |
+| `010_produto_custo_imagem_indices.sql` | `tbl_produto.custo_unitario DECIMAL(10,2)` (`valor_compra INT` fica até a entidade migrar), `imagem` 255, índices de `tbl_evento` |
+
+Regra do Step 0: nenhuma coluna mapeada pelo JPA muda de tipo e toda coluna nova é `NULL` ou tem `DEFAULT`,
+para o back-end atual (`ddl-auto=validate`) continuar subindo. O endurecimento (`NOT NULL`, trocar
+`valor_compra` por `custo_unitario`, usar `ESGOTADA` no enum Java) acontece junto com o código dos Steps 2 a 5.
+Doses continuam sendo produtos filhos (`id_produto_pai`); o histórico de ml fica em `movimento_volume`.
 
 Como a trava usa essa tabela: o serviço abre a transação e faz o `INSERT` da linha (produto, dia) antes de
 enviar o e-mail. Uma segunda transação com a mesma chave fica bloqueada nesse `INSERT` até a primeira terminar:
